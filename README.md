@@ -5,7 +5,7 @@ Ansible Refactoring and Static Assignments (IMPORTS AND ROLES)
 
 In the previous CI-CD Ansibile Jenkins project, I implemented CI/CD and Configuration Managment solution on the Development Servers using Ansible 
 
-In this project, I will be extending the functionality of this architecture and introducing configurations for UAT environment.
+In this project, We'll be extending the functionality of this architecture and introducing configurations for UAT environment.
 
 ![jenkinsansiblearc](https://user-images.githubusercontent.com/61475969/205504382-e09a5aa0-be28-477a-8075-b0d438678a05.png)
 
