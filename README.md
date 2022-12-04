@@ -50,5 +50,175 @@ If both Jenkins jobs have completed one after another – you shall see your fil
 
 Now your Jenkins pipeline is more neat and clean.
 
+<img width="1058" alt="Screenshot 2022-12-04 at 18 07 56" src="https://user-images.githubusercontent.com/61475969/205507821-69d56d3b-0785-4fc4-abd1-f18a40257d53.png">
+
+Step 2 – Refactor Ansible code by importing other playbooks
+
+Importing Playbooks is a great way to refactor your Ansible code. It is a great way to reuse code. We can import other playbooks into a particular playbook. Breaking tasks up into different files is an excellent way to organize complex sets of tasks and reuse them.
+
+Within playbooks folder, create a new file and name it site.yml – This file will now be considered as an entry point into the entire infrastructure configuration.
+
+Create a new folder in root of the repository and name it static-assignments. The static-assignments folder is where all other children playbooks will be stored. 
+
+<img width="762" alt="Screenshot 2022-12-04 at 18 13 45" src="https://user-images.githubusercontent.com/61475969/205508103-494bd140-d495-4791-a441-3326ed93843f.png">
+
+Move common.yml file into the newly created static-assignments folder.
+
+Inside site.yml file, import common.yml playbook by adding the following code to site.yml;
+
+```---
+- hosts: all
+- import_playbook: ../static-assignments/common.yml
+```
+<img width="769" alt="Screenshot 2022-12-04 at 18 20 15" src="https://user-images.githubusercontent.com/61475969/205508397-0c425aa8-d192-4854-82bd-ededcb618f45.png">
+
+We can also create a new yml file called common-del.yml under static-assignments. This will delete wireshark installation we made in the last project. 
+
+Add the following script to common-del.yml:
+
+```
+---
+- name: update web, nfs and db servers
+  hosts: webservers, nfs, db
+  remote_user: ubuntu
+  become: yes
+  become_user: root
+  tasks:
+  - name: delete wireshark
+    yum:
+      name: wireshark
+      state: removed
+
+- name: update LB server
+  hosts: lb
+  remote_user: ubuntu
+  become: yes
+  become_user: root
+  tasks:
+  - name: delete wireshark
+    apt:
+      name: wireshark-qt
+      state: absent
+      autoremove: yes
+      purge: yes
+      autoclean: yes
+```
+
+<img width="771" alt="Screenshot 2022-12-04 at 18 25 10" src="https://user-images.githubusercontent.com/61475969/205508607-407969ca-6234-427b-90bf-1292a5c4ec2c.png">
+
+We update site.yml with - import_playbook: ../static-assignments/common-del.yml instead of common.yml and run it against dev servers
+
+
+Step 3 – Configure UAT Webservers with a role ‘Webserver’
+
+We will create and configure our UAT Servers 
+We could write tasks to configure Web Servers in the same playbook, but it would be too messy, instead, we will use a dedicated role to make our configuration reusable.
+
+Launch 2 EC2 RHEL instance. (web1-uat, web2-uat)
+
+<img width="954" alt="Screenshot 2022-12-04 at 19 05 14" src="https://user-images.githubusercontent.com/61475969/205510240-ceae648c-16ff-4193-b84a-bd4107c12f2a.png">
+
+
+To create a role, you must create a directory called roles/, relative to the playbook file or in /etc/ansible/ directory. I created my roles folder in my ansible-config-mgt project.
+
+
+Creating folder structure can be done in two ways:
+
+Use an Ansible utility called ansible-galaxy inside ansible-config-mgt/roles directory (you need to create roles directory upfront) - I used this option
+
+Creating folder structure can be done in two ways:
+
+Use an Ansible utility called ansible-galaxy inside ansible-config-mgt/roles directory (you need to create roles directory upfront) - I used this option
+
+```
+mkdir roles
+cd roles
+ansible-galaxy init webserver
+```
+
+Create the directory/files structure manually
+
+<img width="233" alt="Screenshot 2022-12-04 at 18 30 06" src="https://user-images.githubusercontent.com/61475969/205508800-3ffbe6dd-abf0-480e-9dc8-b0a8db733725.png">
+
+Update inventory/uat.yml file:
+
+```
+[uat-webservers]
+<Web1-UAT-Server-Private-IP-Address> ansible_ssh_user='ec2-user' ansible_ssh_private_key_file=<path-to-.pem-private-key>
+<Web2-UAT-Server-Private-IP-Address> ansible_ssh_user='ec2-user' ansible_ssh_private_key_file=<path-to-.pem-private-key>
+```
+
+In /etc/ansible/ansible.cfg file uncomment roles_path string and provide a full path to your roles directory roles_path= /home/ubuntu/ansible-config-artifact/roles, so Ansible could know where to find configured roles.
+
+Go into tasks directory, and within the main.yml file, start writing configuration tasks to do the following:
+
+```
+
+---
+- name: install apache
+  become: true
+  ansible.builtin.yum:
+    name: "httpd"
+    state: present
+
+- name: install git
+  become: true
+  ansible.builtin.yum:
+    name: "git"
+    state: present
+
+- name: clone a repo
+  become: true
+  ansible.builtin.git:
+    repo: https://github.com/<your-name>/tooling.git
+    dest: /var/www/html
+    force: yes
+
+- name: copy html content to one level up
+  become: true
+  command: cp -r /var/www/html/html/ /var/www/
+
+- name: Start service httpd, if not started
+  become: true
+  ansible.builtin.service:
+    name: httpd
+    state: started
+
+- name: recursively remove /var/www/html/html/ directory
+  become: true
+  ansible.builtin.file:
+    path: /var/www/html/html
+    state: absent
+```
+
+Install and configure Apache (httpd service)
+
+Make sure that wireshark is deleted on all the servers by running wireshark --version
+<img width="816" alt="Screenshot 2022-12-04 at 19 02 00" src="https://user-images.githubusercontent.com/61475969/205510080-eb77b8df-ea7e-45d4-9266-71769969c2f2.png">
+
+Step 4 – Reference ‘Webserver’ role
+
+Create a new assignment for uat-webservers static-assignments/uat-webservers.yml. and refrence the webserver role inside the file as foollows:
+---
+- hosts: uat-webservers
+  roles:
+    - webserver
+Update site.yml to include the following:
+---
+- hosts: all
+- import_playbook: ../static-assignments/common.yml
+
+- hosts: uat-webservers
+- import_playbook: ../static-assignments/uat-webservers.yml
+
+Commit the repo and merge to master. Then run the following code below after the successful build of save_artifacts project on Jenkins:
+ansible-playbook -i /home/ubuntu/ansible-config-artifact/inventory/uat.yml /home/ubuntu/ansible-config-artifact/playbooks/site.yml --forks 1
+
+The webservers should be displaying webcontent now if the whole setup is successful. http://Web1-UAT-Server-Public-IP-or-Public-DNS-Name/index.php
+
+<img width="999" alt="Screenshot 2022-12-04 at 19 06 29" src="https://user-images.githubusercontent.com/61475969/205510276-5d736d30-05c4-4de8-94e0-1e9b6c58ecec.png">
+
+
+
 
 
